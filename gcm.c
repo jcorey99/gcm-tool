@@ -1,20 +1,14 @@
 /*
- * GCM v0.2 (c)2007-2008 by dsbomb under the GPLv2 licence.
+ * GCM v0.2 (c)2007 by dsbomb under the GPLv2 licence.
  *
  * Dec 16, 2007 - v0.1 - first public release.
  * Dec 16, 2007 - v0.2 - add -fs and -sh options
- * Dec 18, 2007 -fs now displays what the shrunken size will be
- * Dec 20, 2007 -sh improved speed, display percentage
- * found some differences between GCMUtility and this with Ikaruga
- * Dec 26, 2007 -crc added to calculate CRC32 of the file, thanks to pycrc
- * Jan  1, 2008 - v0.3 - next release
- * Jan 10, 2008 - v0.4 - fix bootfile offset on shrunken images
+ *
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "crc.h"
 
 #define MAXNAMELEN 1024
 
@@ -27,8 +21,8 @@ typedef struct _gcm_fileentry {
 	char name[MAXNAMELEN];  // is there a max name size?
 	char path[MAXNAMELEN];  // dir file is in
 } gcm_fileentry;
-// TODO: for now, 10k entries - fix to malloc as needed
-gcm_fileentry *GCM_FileList[1024*10];
+// TODO: for now, 8k entries - fix to malloc as needed
+gcm_fileentry *GCM_FileList[1024*8];
 unsigned int filecount = 0;
 
 void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char *dir);
@@ -36,32 +30,23 @@ void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char 
 int main(int argc, char *argv[]) {
 	FILE *f;
 	unsigned char *buff;
-	char small_gcm[1024];
-	int do_fs = 0, do_shrink = 0, do_crc = 0;
+	int do_fs = 0, do_shrink = 0;
 	char gcmfile[1024];
 
-	printf("GCM v0.4 (c)2007 by dsbomb\n");
-	printf("==============================\n");
+	printf("GCM v0.2 (c)2007 by dsbomb\n");
+	printf("==========================\n");
 	if (argc < 2) {
-		fprintf(stderr, "Usage: gcm [-fs|-sh|-crc] <filename> [shrink filename]\n");
-		fprintf(stderr, "  -fs : Show file system\n");
-		fprintf(stderr, "  -sh : Shrink image\n");
-		fprintf(stderr, "  -crc: Calculate CRC32 of GCM image\n");
+		printf("Usage: gcm [-fs|-sh] <filename>\n");
+		printf("  -fs: Show file system\n");
+		printf("  -sh: Shrink image\n");
 		exit(-1);
 	}
 
-	small_gcm[0] = 0;
 	if (strcmp(argv[1], "-fs") == 0) {
 		do_fs = 1;
 		strncpy(gcmfile, argv[2], 1024);
 	} else if (strcmp(argv[1], "-sh") == 0) {
 		do_shrink = 1;
-		strncpy(gcmfile, argv[2], 1024);
-		if (argc == 4) {
-			strncpy(small_gcm, argv[3], 1024);
-		}
-	} else if (strncmp(argv[1], "-crc", 1024) == 0) {
-		do_crc = 1;
 		strncpy(gcmfile, argv[2], 1024);
 	} else {
 		strncpy(gcmfile, argv[1], 1024);
@@ -75,7 +60,6 @@ int main(int argc, char *argv[]) {
 	buff = malloc(2048);
 	fread(buff, 1, 2048, f);
 
-	printf("Filename: %s\n", gcmfile);
 	// 0-3: System, Game, Region codes
 	printf("Game Code: %c%c%c%c, Region: ", buff[0], buff[1], buff[2], buff[3]);
 	if (buff[3] == 'E')
@@ -98,24 +82,10 @@ int main(int argc, char *argv[]) {
 	char name[993];
 	memcpy(name, buff+0x20, 992);
 	name[993] = 0;
-	printf("\nGame Name: %s\n\n", name);
+	printf("\nGame Name: %s\n", name);
 
-	if (do_crc) {
-		crc_t crc;
-		crc = crc_init();
-		printf("%s CRC: 000.", gcmfile);
-		fseek(f, 0, SEEK_END);
-		int foo = ftell(f), i = 0;
-		fseek(f, 0, SEEK_SET);
-		while (!feof(f)) {
-			i = fread(buff, 1, 1024*2, f);
-			crc = crc_update(crc, buff, i);
-			float p = 100.0 * ftell(f) / foo;
-			printf("\b\b\b\b%3d%%", (int)p);
-		}
-		crc = crc_finalize(crc);
-		printf("\b\b\b\b%08lX\n", (long)crc);
-	} else if (do_fs || do_shrink) {
+	if (do_fs || do_shrink) {
+		printf("\n");
 		// 400-403: debug monitor (dh.bin)
 	    // 404-407: addr to load debug monitor
 		// 408-41F: unused
@@ -149,11 +119,10 @@ int main(int argc, char *argv[]) {
 		parsedir(buff, 1, numentries, "");
 
 		unsigned long totalsize = 0;
-		unsigned long shrunksize = fst + fstsize;
 		for(z = 0; z<filecount; z++) {
 			if (do_fs) {
 				if (GCM_FileList[z]->isdir) {
-					printf("%5ld: %s/%s, Parent: %ld, Next: %ld\n", GCM_FileList[z]->entry, GCM_FileList[z]->path,
+					printf("%5ld: %s/%s, Parent: %08lX, Next: %08lX\n", GCM_FileList[z]->entry, GCM_FileList[z]->path,
 							GCM_FileList[z]->name, GCM_FileList[z]->offset, GCM_FileList[z]->length);
 				} else {
 					printf("%5ld: %s/%s, size: %ld, offset: %08lX-%08lX\n", GCM_FileList[z]->entry, GCM_FileList[z]->path, GCM_FileList[z]->name,
@@ -162,13 +131,10 @@ int main(int argc, char *argv[]) {
 			}
 			if (GCM_FileList[z]->isdir == 0) {
 				totalsize += GCM_FileList[z]->length;
-				shrunksize += GCM_FileList[z]->length;
-				if (shrunksize % 4) shrunksize += 4 - (shrunksize % 4);
 			}
 		}
-
 		if (do_fs) {
-			printf("Total size: %ld, Shrunken size: %ld\n", totalsize, shrunksize);
+			printf("Total size: %ld\n", totalsize);
 		}
 
 		// 2440 - Apploader
@@ -198,33 +164,31 @@ int main(int argc, char *argv[]) {
 
 		if (do_shrink) {
 			FILE *sm;
-			char *backslash, *slash;
-
-			if (small_gcm[0] == 0) {
-				backslash = strrchr(gcmfile, '\\');
-				slash = strrchr(gcmfile, '/');
-				if ( (backslash) || (slash) ) {
-					char str1[1024], str2[1024];
-					if (backslash) {  // Windows style filenames C:\Foo\Whatever.gcm
-						strncpy(str1, gcmfile, backslash-gcmfile);
-						str1[backslash-gcmfile] = 0;
-						strncpy(str2, backslash+1, 1024);
-					} else { // Unix style filenames
-						strncpy(str1, gcmfile, slash-gcmfile+1);
-						str1[slash-gcmfile+1] = 0;
-						strncpy(str2, slash+1, 1024);
-					}
-					sprintf(small_gcm, "%ssmall-%s", str1, str2);
-				} else {
-					sprintf(small_gcm, "small-%s", gcmfile);
+			char *backslash, *slash, small_gcm[1024];
+			backslash = strrchr(gcmfile, '\\');
+			slash = strrchr(gcmfile, '/');
+			if ( (backslash) || (slash) ) {
+				char str1[1024], str2[1024];
+				if (backslash) {  // Windows style filenames C:\Foo\Whatever.gcm
+					strncpy(str1, gcmfile, backslash-gcmfile);
+					str1[backslash-gcmfile] = 0;
+					strncpy(str2, backslash+1, 1024);
+				} else { // Unix style filenames
+					strncpy(str1, gcmfile, slash-gcmfile+1);
+					str1[slash-gcmfile+1] = 0;
+					strncpy(str2, slash+1, 1024);
 				}
+				sprintf(small_gcm, "%ssmall-%s", str1, str2);
+			} else {
+				sprintf(small_gcm, "small-%s", gcmfile);
 			}
+			//sprintf(str, "small-%s", gcmfile);
 			sm = fopen(small_gcm, "wb");
 			if (ferror(sm)) {
 				fprintf(stderr, "ERROR creating %s", small_gcm);
 				exit(-1);
 			}
-			printf("Writing to %s: ....", small_gcm);
+			printf("Writing to %s\n", small_gcm);
 
 			// copy everything before the FST
 			buff = malloc(fst);
@@ -241,7 +205,7 @@ int main(int argc, char *argv[]) {
 				fwrite(&c, 1, 1, sm);  // pad to 4 bytes
 				z++;
 			}
-			// z now is the offset to put FST
+			// z now is the offset for to put FST
 			unsigned long offset = z + fstsize;  // first available offset for files
 			if (offset % 4) offset += 4 - (offset % 4);
 
@@ -251,7 +215,6 @@ int main(int argc, char *argv[]) {
 			fread(entry, 1, 12, f);
 			fwrite(entry, 1, 12, sm);
 			z += 12;
-			unsigned long newbootfile = 0;
 			for(i=0; i<filecount; i++) {
 				entry[0] = GCM_FileList[i]->isdir;
 				entry[1] = GCM_FileList[i]->stringoffset >> 16;
@@ -272,10 +235,6 @@ int main(int argc, char *argv[]) {
 				} else {
 					// Adjust to new offset for files
 					//printf("%5d: %s, Old Offset: 0x%08lX, New Offset: 0x%08lX\n", i, GCM_FileList[i]->name, GCM_FileList[i]->offset, offset);
-					// check if this is the bootfile
-					if (GCM_FileList[i]->offset == bootfile) {
-						newbootfile = offset;
-					}
 					entry[4] = offset >> 24;
 					entry[5] = (offset >> 16) & 0xFF;
 					entry[6] = (offset >> 8) & 0xFF;
@@ -309,27 +268,21 @@ int main(int argc, char *argv[]) {
 				z++;
 			}
 			offset = z;
-			free(buff);
 
-			unsigned long readsize = 1024 * 32;
-			buff = malloc(readsize);
-			//printf("%s: 000.", small_gcm);
+			int asdf = 0, j=0;
 			for(i=0; i<filecount; i++) {
+				for(j=0; j<asdf; j++) printf("\b");
+				char foo[1024];
+				sprintf(foo, "File %d of %d", i, filecount);
+				asdf = strlen(foo);
+				printf(foo);
 				if (GCM_FileList[i]->isdir == 0) {
 					//printf("File: %s, Old Offset: %08lX, New Offset: %08lX\n", GCM_FileList[i]->name, GCM_FileList[i]->offset, offset);
 					fseek(f, GCM_FileList[i]->offset, SEEK_SET);
-					//int t;
-					unsigned long written = 0;
-					while (written < GCM_FileList[i]->length) {
-						if ( (GCM_FileList[i]->length - written) < readsize ) {
-							fread(buff, 1, GCM_FileList[i]->length - written, f);
-							written += fwrite(buff, 1, GCM_FileList[i]->length - written, sm);
-						} else {
-							fread(buff, 1, readsize, f);
-							written += fwrite(buff, 1, readsize, sm);
-						}
-						float p = 100.0 * (z+written) / shrunksize;
-						printf("\b\b\b\b%3d%%", (int)p);
+					int t;
+					for(t=0; t<(GCM_FileList[i]->length); t++) {
+						fread(&c, 1, 1, f);
+						fwrite(&c, 1, 1, sm);
 					}
 					z += GCM_FileList[i]->length;
 					c = 0;
@@ -338,22 +291,11 @@ int main(int argc, char *argv[]) {
 						z++;
 					}
 					offset = z;
-				} // if a file
-			} // for each file
-
-			// fix bootfile offset
-			if ( (bootfile != newbootfile) && (newbootfile != 0) ) {
-				buff[0] = newbootfile >> 24;
-				buff[1] = (newbootfile >> 16) & 0xFF;
-				buff[2] = (newbootfile >> 8) & 0xFF;
-				buff[3] = newbootfile & 0xFF;
-				fseek(sm, 0x420, SEEK_SET);
-				fwrite(buff, 1, 4, sm);
-			}
-			fclose(sm);
+				}
+			} // for
+			//fclose(sm);
 			//free(buff);
-			printf("\n");
-		} // if do_shrink
+		}
 	} // if do_fs or do_shrink
 
 	free(buff);
@@ -361,7 +303,7 @@ int main(int argc, char *argv[]) {
 }
 
 /*
- * parsedir: parse the dir structure, filling GCM_FileList[]
+ * parsedir: parse the dir structure, filling GCM_FileEntry[] and GCM_DirEntry[]
  * buff: loaded with FST
  * TODO: check for proper start/end boundaries
  */
@@ -377,33 +319,60 @@ void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char 
 	strncpy(curdir, dir, 1024);
 	i = start * 12;
 	for (entry = start; entry < end; entry++) {
-		offset = ((buff[i+4] * 256 + buff[i+5]) * 256 + buff[i+6]) * 256 + buff[i+7];
-		length = ((buff[i+8] * 256 + buff[i+9]) * 256 + buff[i+10]) * 256 + buff[i+11];
-		unsigned long stringoffset = (buff[i+1] * 256 + buff[i+2]) * 256 + buff[i+3];
-		// Check if this entry is already in the GCM_FileList
-		int zz, res=0;
-		for(zz=0; zz<filecount; zz++) {
-			if (GCM_FileList[zz]->entry == entry) {
-				res++;
-				break;
+		if (buff[i] == 0) {  // file
+			offset = ((buff[i+4] * 256 + buff[i+5]) * 256 + buff[i+6]) * 256 + buff[i+7];
+			length = ((buff[i+8] * 256 + buff[i+9]) * 256 + buff[i+10]) * 256 + buff[i+11];
+			unsigned long stringoffset = (buff[i+1] * 256 + buff[i+2]) * 256 + buff[i+3];
+			// Check if this entry is already in the Lists
+			int zz, res=0;
+			for(zz=0; zz<filecount; zz++) {
+				if (GCM_FileList[zz]->entry == entry) {
+					res++;
+				}
 			}
-		}
-		if (res == 0) {
-			gcm_fileentry *f = malloc(sizeof(gcm_fileentry));
-			f->isdir = 0;
-			f->entry = entry;
-			f->stringoffset = stringoffset;
-			f->offset = offset;
-			f->length = length;
-			strncpy(f->name, (char*) (stringtable+stringoffset), MAXNAMELEN);
-			strncpy(f->path, dir, MAXNAMELEN);
-			GCM_FileList[filecount++] = f;
-			if (buff[i] == 1) {
-				f->isdir = 1;
-				sprintf(curdir, "%s/%s", f->path, f->name);
+			if (res == 0) {
+				gcm_fileentry *f = malloc(sizeof(gcm_fileentry));
+				f->isdir = 0;
+				f->entry = entry;
+				f->stringoffset = stringoffset;
+				f->offset = offset;
+				f->length = length;
+				strncpy(f->name, (char*) (stringtable+stringoffset), MAXNAMELEN);
+				strncpy(f->path, dir, MAXNAMELEN);
+				//GCM_FileList[filecount] = malloc(sizeof(gcm_direntry*));
+				GCM_FileList[filecount++] = f;
+				/*printf("#%04lX: File, ", f->entry);
+			    printf("Offset: 0x%08lX, ", f->offset);
+			    printf("Length: %8ld, ", f->length);
+			    printf("Path: '%s', ", f->path);
+			    printf("Name: '%s'\n", f->name);*/
+			}
+		} else { // dir
+			offset = ((buff[i+4] * 256 + buff[i+5]) * 256 + buff[i+6]) * 256 + buff[i+7];
+			length = ((buff[i+8] * 256 + buff[i+9]) * 256 + buff[i+10]) * 256 + buff[i+11];
+			unsigned long stringoffset = (buff[i+1] * 256 + buff[i+2]) * 256 + buff[i+3];
+			// Check if this entry is already in the Lists
+			int zz, res=0;
+			for(zz=0; zz<filecount; zz++) {
+				if (GCM_FileList[zz]->entry == entry) {
+					res++;
+				}
+			}
+			if (res == 0) {
+				gcm_fileentry *d = malloc(sizeof(gcm_fileentry));
+				d->isdir = 1;
+				d->entry = entry;
+				d->stringoffset = stringoffset;
+				d->offset = offset;
+				d->length = length;
+				strncpy(d->name, (char*) (stringtable+stringoffset), MAXNAMELEN);
+				strncpy(d->path, dir, MAXNAMELEN);
+				GCM_FileList[filecount++] = d;
+				sprintf(curdir, "%s/%s", d->path, d->name);
 				parsedir(buff, entry+1, length, curdir);
 			}
 		}
 		i += 12;
 	} // for
+
 }
