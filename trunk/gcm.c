@@ -1,5 +1,5 @@
 /*
- * GCM v0.2 (c)2007 by dsbomb under the GPLv2 licence.
+ * GCM v0.2 (c)2007-2008 by dsbomb under the GPLv2 licence.
  *
  * Dec 16, 2007 - v0.1 - first public release.
  * Dec 16, 2007 - v0.2 - add -fs and -sh options
@@ -8,6 +8,7 @@
  * found some differences between GCMUtility and this with Ikaruga
  * Dec 26, 2007 -crc added to calculate CRC32 of the file, thanks to pycrc
  * Jan  1, 2008 - v0.3 - next release
+ * Jan 10, 2008 - v0.4 - fix bootfile offset on shrunken images
  */
 
 #include <stdio.h>
@@ -39,7 +40,7 @@ int main(int argc, char *argv[]) {
 	int do_fs = 0, do_shrink = 0, do_crc = 0;
 	char gcmfile[1024];
 
-	printf("GCM v0.3 (c)2007 by dsbomb\n");
+	printf("GCM v0.4 (c)2007 by dsbomb\n");
 	printf("==============================\n");
 	if (argc < 2) {
 		fprintf(stderr, "Usage: gcm [-fs|-sh|-crc] <filename> [shrink filename]\n");
@@ -74,6 +75,7 @@ int main(int argc, char *argv[]) {
 	buff = malloc(2048);
 	fread(buff, 1, 2048, f);
 
+	printf("Filename: %s\n", gcmfile);
 	// 0-3: System, Game, Region codes
 	printf("Game Code: %c%c%c%c, Region: ", buff[0], buff[1], buff[2], buff[3]);
 	if (buff[3] == 'E')
@@ -151,7 +153,7 @@ int main(int argc, char *argv[]) {
 		for(z = 0; z<filecount; z++) {
 			if (do_fs) {
 				if (GCM_FileList[z]->isdir) {
-					printf("%5ld: %s/%s, Parent: %08lX, Next: %08lX\n", GCM_FileList[z]->entry, GCM_FileList[z]->path,
+					printf("%5ld: %s/%s, Parent: %ld, Next: %ld\n", GCM_FileList[z]->entry, GCM_FileList[z]->path,
 							GCM_FileList[z]->name, GCM_FileList[z]->offset, GCM_FileList[z]->length);
 				} else {
 					printf("%5ld: %s/%s, size: %ld, offset: %08lX-%08lX\n", GCM_FileList[z]->entry, GCM_FileList[z]->path, GCM_FileList[z]->name,
@@ -249,6 +251,7 @@ int main(int argc, char *argv[]) {
 			fread(entry, 1, 12, f);
 			fwrite(entry, 1, 12, sm);
 			z += 12;
+			unsigned long newbootfile = 0;
 			for(i=0; i<filecount; i++) {
 				entry[0] = GCM_FileList[i]->isdir;
 				entry[1] = GCM_FileList[i]->stringoffset >> 16;
@@ -269,6 +272,10 @@ int main(int argc, char *argv[]) {
 				} else {
 					// Adjust to new offset for files
 					//printf("%5d: %s, Old Offset: 0x%08lX, New Offset: 0x%08lX\n", i, GCM_FileList[i]->name, GCM_FileList[i]->offset, offset);
+					// check if this is the bootfile
+					if (GCM_FileList[i]->offset == bootfile) {
+						newbootfile = offset;
+					}
 					entry[4] = offset >> 24;
 					entry[5] = (offset >> 16) & 0xFF;
 					entry[6] = (offset >> 8) & 0xFF;
@@ -333,6 +340,16 @@ int main(int argc, char *argv[]) {
 					offset = z;
 				} // if a file
 			} // for each file
+
+			// fix bootfile offset
+			if ( (bootfile != newbootfile) && (newbootfile != 0) ) {
+				buff[0] = newbootfile >> 24;
+				buff[1] = (newbootfile >> 16) & 0xFF;
+				buff[2] = (newbootfile >> 8) & 0xFF;
+				buff[3] = newbootfile & 0xFF;
+				fseek(sm, 0x420, SEEK_SET);
+				fwrite(buff, 1, 4, sm);
+			}
 			fclose(sm);
 			//free(buff);
 			printf("\n");
@@ -344,7 +361,7 @@ int main(int argc, char *argv[]) {
 }
 
 /*
- * parsedir: parse the dir structure, filling GCM_FileEntry[] and GCM_DirEntry[]
+ * parsedir: parse the dir structure, filling GCM_FileList[]
  * buff: loaded with FST
  * TODO: check for proper start/end boundaries
  */
@@ -360,56 +377,30 @@ void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char 
 	strncpy(curdir, dir, 1024);
 	i = start * 12;
 	for (entry = start; entry < end; entry++) {
-		if (buff[i] == 0) {  // file
-			offset = ((buff[i+4] * 256 + buff[i+5]) * 256 + buff[i+6]) * 256 + buff[i+7];
-			length = ((buff[i+8] * 256 + buff[i+9]) * 256 + buff[i+10]) * 256 + buff[i+11];
-			unsigned long stringoffset = (buff[i+1] * 256 + buff[i+2]) * 256 + buff[i+3];
-			// Check if this entry is already in the Lists
-			int zz, res=0;
-			for(zz=0; zz<filecount; zz++) {
-				if (GCM_FileList[zz]->entry == entry) {
-					res++;
-				}
+		offset = ((buff[i+4] * 256 + buff[i+5]) * 256 + buff[i+6]) * 256 + buff[i+7];
+		length = ((buff[i+8] * 256 + buff[i+9]) * 256 + buff[i+10]) * 256 + buff[i+11];
+		unsigned long stringoffset = (buff[i+1] * 256 + buff[i+2]) * 256 + buff[i+3];
+		// Check if this entry is already in the GCM_FileList
+		int zz, res=0;
+		for(zz=0; zz<filecount; zz++) {
+			if (GCM_FileList[zz]->entry == entry) {
+				res++;
+				break;
 			}
-			if (res == 0) {
-				gcm_fileentry *f = malloc(sizeof(gcm_fileentry));
-				f->isdir = 0;
-				f->entry = entry;
-				f->stringoffset = stringoffset;
-				f->offset = offset;
-				f->length = length;
-				strncpy(f->name, (char*) (stringtable+stringoffset), MAXNAMELEN);
-				strncpy(f->path, dir, MAXNAMELEN);
-				//GCM_FileList[filecount] = malloc(sizeof(gcm_direntry*));
-				GCM_FileList[filecount++] = f;
-				/*printf("#%04lX: File, ", f->entry);
-			    printf("Offset: 0x%08lX, ", f->offset);
-			    printf("Length: %8ld, ", f->length);
-			    printf("Path: '%s', ", f->path);
-			    printf("Name: '%s'\n", f->name);*/
-			}
-		} else { // dir
-			offset = ((buff[i+4] * 256 + buff[i+5]) * 256 + buff[i+6]) * 256 + buff[i+7];
-			length = ((buff[i+8] * 256 + buff[i+9]) * 256 + buff[i+10]) * 256 + buff[i+11];
-			unsigned long stringoffset = (buff[i+1] * 256 + buff[i+2]) * 256 + buff[i+3];
-			// Check if this entry is already in the Lists
-			int zz, res=0;
-			for(zz=0; zz<filecount; zz++) {
-				if (GCM_FileList[zz]->entry == entry) {
-					res++;
-				}
-			}
-			if (res == 0) {
-				gcm_fileentry *d = malloc(sizeof(gcm_fileentry));
-				d->isdir = 1;
-				d->entry = entry;
-				d->stringoffset = stringoffset;
-				d->offset = offset;
-				d->length = length;
-				strncpy(d->name, (char*) (stringtable+stringoffset), MAXNAMELEN);
-				strncpy(d->path, dir, MAXNAMELEN);
-				GCM_FileList[filecount++] = d;
-				sprintf(curdir, "%s/%s", d->path, d->name);
+		}
+		if (res == 0) {
+			gcm_fileentry *f = malloc(sizeof(gcm_fileentry));
+			f->isdir = 0;
+			f->entry = entry;
+			f->stringoffset = stringoffset;
+			f->offset = offset;
+			f->length = length;
+			strncpy(f->name, (char*) (stringtable+stringoffset), MAXNAMELEN);
+			strncpy(f->path, dir, MAXNAMELEN);
+			GCM_FileList[filecount++] = f;
+			if (buff[i] == 1) {
+				f->isdir = 1;
+				sprintf(curdir, "%s/%s", f->path, f->name);
 				parsedir(buff, entry+1, length, curdir);
 			}
 		}
