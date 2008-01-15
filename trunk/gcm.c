@@ -1,5 +1,5 @@
 /*
- * GCM v0.2 (c)2007-2008 by dsbomb under the GPLv2 licence.
+ * GCM v0.5beta (c)2007-2008 by dsbomb under the GPLv2 licence.
  *
  * Dec 16, 2007 - v0.1 - first public release.
  * Dec 16, 2007 - v0.2 - add -fs and -sh options
@@ -9,13 +9,16 @@
  * Dec 26, 2007 -crc added to calculate CRC32 of the file, thanks to pycrc
  * Jan  1, 2008 - v0.3 - next release
  * Jan 10, 2008 - v0.4 - fix bootfile offset on shrunken images
+ * Jan 15, 2008 -ex added
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <io.h>
 #include "crc.h"
 
+// is there a max name size?
 #define MAXNAMELEN 1024
 
 typedef struct _gcm_fileentry {
@@ -24,8 +27,8 @@ typedef struct _gcm_fileentry {
 	unsigned long stringoffset;
 	unsigned long offset;
 	unsigned long length;
-	char name[MAXNAMELEN];  // is there a max name size?
-	char path[MAXNAMELEN];  // dir file is in
+	char path[MAXNAMELEN];
+	char name[MAXNAMELEN];
 } gcm_fileentry;
 // TODO: for now, 10k entries - fix to malloc as needed
 gcm_fileentry *GCM_FileList[1024*10];
@@ -36,17 +39,17 @@ void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char 
 int main(int argc, char *argv[]) {
 	FILE *f;
 	unsigned char *buff;
-	char small_gcm[1024];
-	int do_fs = 0, do_shrink = 0, do_crc = 0;
-	char gcmfile[1024];
+	char gcmfile[1024], small_gcm[1024];
+	int do_fs = 0, do_shrink = 0, do_crc = 0, do_ex = 0;
 
-	printf("GCM v0.4 (c)2007 by dsbomb\n");
+	printf("GCM v0.5beta (c)2007 by dsbomb\n");
 	printf("==============================\n");
 	if (argc < 2) {
-		fprintf(stderr, "Usage: gcm [-fs|-sh|-crc] <filename> [shrink filename]\n");
-		fprintf(stderr, "  -fs : Show file system\n");
-		fprintf(stderr, "  -sh : Shrink image\n");
+		fprintf(stderr, "Usage: gcm [-fs|-sh|-crc] <gcm filename> [shrink|extract filename]\n");
+		fprintf(stderr, "  -fs : Show the file system\n");
+		fprintf(stderr, "  -sh : Shrink GCM image\n");
 		fprintf(stderr, "  -crc: Calculate CRC32 of GCM image\n");
+		fprintf(stderr, "  -ex : Extract file(s) from GCM image\n");
 		exit(-1);
 	}
 
@@ -63,6 +66,12 @@ int main(int argc, char *argv[]) {
 	} else if (strncmp(argv[1], "-crc", 1024) == 0) {
 		do_crc = 1;
 		strncpy(gcmfile, argv[2], 1024);
+	} else if (strncmp(argv[1], "-ex", 1024) == 0) {
+		do_ex = 1;
+		strncpy(gcmfile, argv[2], 1024);
+		if (argc == 4) {
+			strncpy(small_gcm, argv[3], 1024); // use small_gcm for file/dir to extract
+		}
 	} else {
 		strncpy(gcmfile, argv[1], 1024);
 	}
@@ -105,7 +114,7 @@ int main(int argc, char *argv[]) {
 		crc = crc_init();
 		printf("%s CRC: 000.", gcmfile);
 		fseek(f, 0, SEEK_END);
-		int foo = ftell(f), i = 0;
+		int i = 0, foo = ftell(f);
 		fseek(f, 0, SEEK_SET);
 		while (!feof(f)) {
 			i = fread(buff, 1, 1024*2, f);
@@ -115,7 +124,7 @@ int main(int argc, char *argv[]) {
 		}
 		crc = crc_finalize(crc);
 		printf("\b\b\b\b%08lX\n", (long)crc);
-	} else if (do_fs || do_shrink) {
+	} else if (do_fs || do_shrink || do_ex) {
 		// 400-403: debug monitor (dh.bin)
 	    // 404-407: addr to load debug monitor
 		// 408-41F: unused
@@ -147,17 +156,43 @@ int main(int argc, char *argv[]) {
 
 		unsigned long numentries = ((buff[8] * 256 + buff[9]) * 256 + buff[10]) * 256 + buff[11];
 		parsedir(buff, 1, numentries, "");
+		free(buff);
 
 		unsigned long totalsize = 0;
 		unsigned long shrunksize = fst + fstsize;
+
+		// Extracting files
+		int extract_all = 0;
+		char ex_path[1024], ex_name[1024], *slash;
+
+		if (do_ex) {
+			if (small_gcm[0] == 0) {
+				extract_all = 1;
+			} else {
+				// drop leading '.' for use within mingw bash shell
+				if (small_gcm[0] == '.') {
+					char tmp[1024];
+					strcpy(tmp, small_gcm+1);
+					strcpy(small_gcm, tmp);
+				}
+				slash = strrchr(small_gcm, '/');
+				if (slash) {
+					strncpy(ex_path, small_gcm, slash-small_gcm);
+					ex_path[slash-small_gcm] = 0;
+					strncpy(ex_name, slash+1, 1024);
+				}
+			}
+		}
+
 		for(z = 0; z<filecount; z++) {
 			if (do_fs) {
 				if (GCM_FileList[z]->isdir) {
 					printf("%5ld: %s/%s, Parent: %ld, Next: %ld\n", GCM_FileList[z]->entry, GCM_FileList[z]->path,
 							GCM_FileList[z]->name, GCM_FileList[z]->offset, GCM_FileList[z]->length);
 				} else {
-					printf("%5ld: %s/%s, size: %ld, offset: %08lX-%08lX\n", GCM_FileList[z]->entry, GCM_FileList[z]->path, GCM_FileList[z]->name,
-							GCM_FileList[z]->length, GCM_FileList[z]->offset, GCM_FileList[z]->offset+GCM_FileList[z]->length-1);
+					printf("%5ld: %s/%s, size: %ld, offset: %08lX-%08lX\n", GCM_FileList[z]->entry, GCM_FileList[z]->path,
+							GCM_FileList[z]->name, GCM_FileList[z]->length, GCM_FileList[z]->offset,
+							GCM_FileList[z]->offset+GCM_FileList[z]->length-1);
 				}
 			}
 			if (GCM_FileList[z]->isdir == 0) {
@@ -165,14 +200,44 @@ int main(int argc, char *argv[]) {
 				shrunksize += GCM_FileList[z]->length;
 				if (shrunksize % 4) shrunksize += 4 - (shrunksize % 4);
 			}
-		}
+			if (do_ex) {
+				// TODO: extracting whole dirs and extracting everything
+				if ( /*(extract_all) ||*/ ( (strcmp(GCM_FileList[z]->path, ex_path) == 0) &&
+					(strcmp(GCM_FileList[z]->name, ex_name) == 0) ) ) {
+					if (!GCM_FileList[z]->isdir) {
+						printf("Extracting: %s/%s\n", ex_path, ex_name);
+						// TODO: make necessary dirs in ex_path
+						if (ex_path[0]) {  // if not root dir
+							//int a = mkdir(ex_path);
+							//printf("Making dir: %s -> %d\n", ex_path, a);
+						}
+						FILE *ex_file = fopen(ex_name, "wb");
+						if (!feof(ex_file)) {
+							fseek(f, GCM_FileList[z]->offset, SEEK_SET);
+							unsigned long written = 0, readsize = 1024*8;
+							buff = malloc(readsize);
+							while (written < GCM_FileList[z]->length) {
+								if ( (GCM_FileList[z]->length - written) < readsize ) {
+									fread(buff, 1, GCM_FileList[z]->length - written, f);
+									written += fwrite(buff, 1, GCM_FileList[z]->length - written, ex_file);
+								} else {
+									fread(buff, 1, readsize, f);
+									written += fwrite(buff, 1, readsize, ex_file);
+								}
+							} // while
+							fclose(ex_file);
+							free(buff);
+						} // if !feof
+					} // if file
+				} // if extractable
+			} // if do_ex
+		} // for each file
 
 		if (do_fs) {
 			printf("Total size: %ld, Shrunken size: %ld\n", totalsize, shrunksize);
 		}
 
 		// 2440 - Apploader
-		free(buff);  // free header buffer
 		buff = malloc(32);  // apploader header
 		memset(buff, 11, 32); // set to dummy value
 
@@ -209,7 +274,7 @@ int main(int argc, char *argv[]) {
 						strncpy(str1, gcmfile, backslash-gcmfile);
 						str1[backslash-gcmfile] = 0;
 						strncpy(str2, backslash+1, 1024);
-					} else { // Unix style filenames
+					} else { // Unix style filenames /foo/whatever.gcm
 						strncpy(str1, gcmfile, slash-gcmfile+1);
 						str1[slash-gcmfile+1] = 0;
 						strncpy(str2, slash+1, 1024);
@@ -354,7 +419,7 @@ int main(int argc, char *argv[]) {
 			//free(buff);
 			printf("\n");
 		} // if do_shrink
-	} // if do_fs or do_shrink
+	} // if do_fs or do_shrink or do_ex
 
 	free(buff);
 	return 0;
