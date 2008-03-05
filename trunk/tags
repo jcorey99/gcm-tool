@@ -1,0 +1,28 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.7	//
+CRC_ALGO_TABLE_DRIVEN	crc.h	25;"	d
+GCM_FileList	gcm.c	/^gcm_fileentry *GCM_FileList[1024*10];$/;"	v
+MAXNAMELEN	gcm.c	21;"	d	file:
+__CRC_H__	crc.h	17;"	d
+_gcm_fileentry	gcm.c	/^typedef struct _gcm_fileentry {$/;"	s	file:
+crc_finalize	crc.h	/^static inline crc_t crc_finalize(crc_t crc)$/;"	f
+crc_init	crc.h	/^static inline crc_t crc_init(void)$/;"	f
+crc_reflect	crc.c	/^long crc_reflect(long data, size_t data_len)$/;"	f
+crc_t	crc.h	/^typedef uint32_t crc_t;$/;"	t
+crc_table	crc.c	/^static const crc_t crc_table[256] = {$/;"	v	file:
+crc_update	crc.c	/^crc_t crc_update(crc_t crc, const unsigned char *data, size_t data_len)$/;"	f
+entry	gcm.c	/^	unsigned long entry;$/;"	m	struct:_gcm_fileentry	file:
+filecount	gcm.c	/^unsigned int filecount = 0;$/;"	v
+gcm_fileentry	gcm.c	/^} gcm_fileentry;$/;"	t	typeref:struct:_gcm_fileentry	file:
+isdir	gcm.c	/^	int isdir;$/;"	m	struct:_gcm_fileentry	file:
+length	gcm.c	/^	unsigned long length;$/;"	m	struct:_gcm_fileentry	file:
+main	gcm.c	/^int main(int argc, char *argv[]) {$/;"	f
+name	gcm.c	/^	char name[MAXNAMELEN];$/;"	m	struct:_gcm_fileentry	file:
+offset	gcm.c	/^	unsigned long offset;$/;"	m	struct:_gcm_fileentry	file:
+parsedir	gcm.c	/^void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char *dir) {$/;"	f
+path	gcm.c	/^	char path[MAXNAMELEN];$/;"	m	struct:_gcm_fileentry	file:
+stringoffset	gcm.c	/^	unsigned long stringoffset;$/;"	m	struct:_gcm_fileentry	file:
