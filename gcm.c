@@ -134,18 +134,40 @@ int main(int argc, char *argv[]) {
         unsigned long fstsize = ((buff[0x428] * 256 + buff[0x429]) * 256 + buff[0x42A]) * 256 + buff[0x42B];
         // 42C-42F: maximum size of FST
         unsigned long fstmaxsize = ((buff[0x42C] * 256 + buff[0x42D]) * 256 + buff[0x42E]) * 256 + buff[0x42F];
+        // 2440 - Apploader
+        char *buff2 = malloc(32);  // apploader header
+        memset(buff2, 11, 32); // set to dummy value
+
+        // fast forward to the Apploader header
+        fseek(f, 0x2440, SEEK_SET);
+        unsigned long z = fread(buff2, 1, 32, f);  // buff now contains FST
+        if ( (z != 32) || (ferror(f)) || (feof(f)) ) {
+            fprintf(stderr, "ERROR reading Apploader header!\n");
+            exit(-1);
+        }
+        if (buff2[10] != 0) {
+            buff2[10] = 0;
+        }
+        unsigned long apploader = ((buff2[0x10] * 256 + buff2[0x11]) * 256 + buff2[0x12]) * 256 + buff2[0x13];
+        unsigned long appsize = ((buff2[0x14] * 256 + buff2[0x15]) * 256 + buff2[0x16]) * 256 + buff2[0x17];
+        unsigned long trailsize = ((buff2[0x18] * 256 + buff2[0x19]) * 256 + buff2[0x1A]) * 256 + buff2[0x1B];
+
         if (do_fs) {
             printf("Bootfile offset: 0x%08lX\n", bootfile);
             printf("FST offset: 0x%08lX\n", fst);
-            printf("FST size: %ld, max size %ld\n", fstsize, fstmaxsize);
+            printf("FST size: %ld, max size %ld\n\n", fstsize, fstmaxsize);
+            printf("Apploader: %s, Entry Point: 0x%08lX\n", buff2, apploader);
+            printf("Apploader size: %ld, ", appsize);
+            printf("Trailer size: %ld\n", trailsize);
         }
         free(buff);  // free header buffer
+        free(buff2);
         buff = malloc(fstsize+2);
         memset(buff, 11, fstsize+2); // set to dummy value
 
         // fast forward to the FST
         fseek(f, fst, SEEK_SET);
-        unsigned long z = fread(buff, 1, fstsize+1, f);  // buff now contains FST
+        z = fread(buff, 1, fstsize+1, f);  // buff now contains FST
         if ( (z != fstsize+1) || (ferror(f)) || (feof(f)) ) {
             fprintf(stderr, "ERROR reading FST!\n");
             exit(-1);
@@ -195,7 +217,8 @@ int main(int argc, char *argv[]) {
             if (GCM_FileList[z]->isdir == 0) {
                 totalsize += GCM_FileList[z]->length;
                 shrunksize += GCM_FileList[z]->length;
-                if (shrunksize % 4) shrunksize += 4 - (shrunksize % 4);
+                if ( (shrunksize % 4) && (z < filecount-1) )
+                    shrunksize += 4 - (shrunksize % 4);
             }
             if (do_ex) {
                 // TODO: extracting whole dirs and extracting everything
@@ -231,32 +254,8 @@ int main(int argc, char *argv[]) {
         } // for each file
 
         if (do_fs) {
-            printf("Total size: %ld, Shrunken size: %ld\n", totalsize, shrunksize);
+            printf("Total file size: %ld, Shrunken image size: %ld\n", totalsize, shrunksize);
         }
-
-        // 2440 - Apploader
-        buff = malloc(32);  // apploader header
-        memset(buff, 11, 32); // set to dummy value
-
-        // fast forward to the Apploader header
-        fseek(f, 0x2440, SEEK_SET);
-        z = fread(buff, 1, 32, f);  // buff now contains FST
-        if ( (z != 32) || (ferror(f)) || (feof(f)) ) {
-            fprintf(stderr, "ERROR reading Apploader header!\n");
-            exit(-1);
-        }
-        if (buff[10] != 0) {
-            buff[10] = 0;
-        }
-        unsigned long apploader = ((buff[0x10] * 256 + buff[0x11]) * 256 + buff[0x12]) * 256 + buff[0x13];
-        unsigned long appsize = ((buff[0x14] * 256 + buff[0x15]) * 256 + buff[0x16]) * 256 + buff[0x17];
-        unsigned long trailsize = ((buff[0x18] * 256 + buff[0x19]) * 256 + buff[0x1A]) * 256 + buff[0x1B];
-        if (do_fs) {
-            printf("\nApploader: %s, Entry Point: 0x%08lX\n", buff, apploader);
-            printf("Apploader size: %ld, ", appsize);
-            printf("Trailer size: %ld\n", trailsize);
-        }
-        free(buff);
 
         if (do_shrink) {
             FILE *sm;
@@ -395,7 +394,7 @@ int main(int argc, char *argv[]) {
                     }
                     z += GCM_FileList[i]->length;
                     c = 0;
-                    while (z % 4) {
+                    while ( (z % 4) && (i < filecount-1) ) {
                         fwrite(&c, 1, 1, sm);  // pad to 4 bytes
                         z++;
                     }
