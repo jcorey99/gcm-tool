@@ -30,7 +30,7 @@ typedef struct _gcm_fileentry {
     char name[MAXNAMELEN];
 } gcm_fileentry;
 #ifdef __MINGW32_VERSION
-gcm_fileentry *GCM_FileList[1024*20];
+gcm_fileentry *GCM_FileList[1024*25];
 #else
 gcm_fileentry **GCM_FileList;
 #endif
