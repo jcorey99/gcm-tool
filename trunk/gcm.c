@@ -29,7 +29,11 @@ typedef struct _gcm_fileentry {
     char path[MAXNAMELEN];
     char name[MAXNAMELEN];
 } gcm_fileentry;
+#ifdef __MINGW32_VERSION
+gcm_fileentry *GCM_FileList[1024*20];
+#else
 gcm_fileentry **GCM_FileList;
+#endif
 unsigned int filecount = 0;
 
 void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char *dir);
@@ -457,11 +461,13 @@ void parsedir(unsigned char *buff, unsigned long start, unsigned long end, char 
             f->length = length;
             strncpy(f->name, (char*) (stringtable+stringoffset), MAXNAMELEN);
             strncpy(f->path, dir, MAXNAMELEN);
+#ifndef __MINGW32_VERSION
             // alloc
             if (filecount == 0) {
                 // allocate enough pointers for each file, length = number of files in root entry
                 GCM_FileList = malloc(sizeof(gcm_fileentry*) * length);
             }
+#endif
             GCM_FileList[filecount++] = f;
             if (buff[i] == 1) {
                 f->isdir = 1;
