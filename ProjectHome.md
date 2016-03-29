@@ -1,0 +1,1 @@
+GCM is a command-line tool to manage Gamecube image files.  Currently, it can display information from the header (title, region, etc) as well as shrink the image from unnecessary padding and calculate the CRC32 checksum of the image.
